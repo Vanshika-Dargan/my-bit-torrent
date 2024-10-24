@@ -1,0 +1,11 @@
+{
+  "name": "my-bit-torrent",
+  "version": "1.0.0",
+  "description": "Torrent is a peer to peer file sharing protocol used for distributing large amounts of data. Torrent is a torrent client capable of downloading publicly available file using the bit torrent protocol.",
+  "main": "index.js",
+  "scripts": {
+    "dev":"node src/index.js"
+  },
+  "author": "Vanshika Dargan",
+  "license": "ISC"
+}
