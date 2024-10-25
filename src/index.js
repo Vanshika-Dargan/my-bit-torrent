@@ -3,19 +3,45 @@ const process = require('process');
 
 function decodeBencode(bencodedValue){
 
-    if(!isNaN(bencodedValue[0])){
-    const firstColonIndex = bencodedValue.indexOf(":");
-    if(firstColonIndex === -1){
-    throw new Error('Invalid encoded value');
+    function decodeString(bencodedValue){
+    const colonIndex = bencodedValue.indexOf(":");
+    const length = parseInt(bencodedValue.slice(0, colonIndex),10);
+    return [bencodedValue.slice(colonIndex+1, colonIndex+1+length), bencodedValue.slice(colonIndex+1+length)];
     }
-    return bencodedValue.substr(firstColonIndex+1);
-}
-else if(bencodedValue[0] === 'i' && bencodedValue[bencodedValue.length - 1] === 'e'){
-    return +bencodedValue.slice(1,-1)
-  }
-else {
-    throw new Error('Not a valid string')
-}
+
+    function decodeInteger(bencodedValue){
+    const eIndex = bencodedValue.indexOf('e');
+    return [parseInt(bencodedValue.slice(1,eIndex),10),bencodedValue.slice(eIndex+1)];
+    }
+
+    function decode(bencodedValue){
+    
+        if(/^\d/.test(bencodedValue[0])){
+            const [decodedValue,rem]=decodeString(bencodedValue);
+            return [decodedValue,rem];
+        }
+        else if(bencodedValue[0]==='i'){
+            const [decodedValue,rem]=decodeInteger(bencodedValue);
+            return [decodedValue,rem];
+        }
+        else if(bencodedValue[0]==='l'){
+            bencodedValue = bencodedValue.slice(1);
+            const output = [];
+            while(!bencodedValue.startsWith('e')){
+                const [decodedValue,rem]=decode(bencodedValue);
+                output.push(decodedValue);
+                bencodedValue = rem;
+            }
+            return [output,bencodedValue.slice(1)];
+        }
+        else {
+            throw new Error("Unsupported or invalid bencoded value");
+        }
+
+    }
+
+    const decodedValue = decode(bencodedValue)[0];
+    return decodedValue;
 }
 
 
