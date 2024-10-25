@@ -97,9 +97,22 @@ function main() {
     console.log('Tracker URL:', decodedValue.announce);
     console.log('Length:', decodedValue.info.length);
     console.log('Info Hash:', hash);
+    console.log('Piece Length:', decodedValue.info['piece length']);
+    console.log('Piece Hashes:', splitBufferToHexArray(decodedValue.info.pieces, decodedValue.info['piece length']));
+    
   } else {
     throw new Error(`Unknown command ${command}`);
   }
 }
 
 main();
+
+function splitBufferToHexArray(buffer, pieceLength) {
+  const piecesArray = [];
+  for (let i = 0; i < buffer.length; i += pieceLength) {
+    const piece = buffer.slice(i, i + pieceLength);
+    piecesArray.push(Buffer.from(piece, 'binary').toString('hex'));
+  }
+  return piecesArray;
+}
+
