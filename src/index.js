@@ -59,6 +59,25 @@ function decodeBencode(bencodedValue) {
     return decodedValue;
 }
 
+function encodeBencode(bencode){
+
+    if(Number.isFinite(bencode)){
+      return `i${bencode}e`;
+    }
+  
+    else if(typeof bencode === 'string'){
+      const buff = Buffer.from(bencode, 'binary');
+      return `${buff.length}:`+buff.toString('binary')
+    }
+  
+    else if(Array.isArray(bencode)){
+      return `l${bencode.map((item)=>encodeBencode(item)).join("")}e`;
+    }
+    else{
+    return `d${Object.entries(bencode).sort(([keyA],[keyB])=>keyA.localeCompare(keyB)).map(([k,v])=>`${encodeBencode(k)}${encodeBencode(v)}}`).join("")}e`
+    }
+  }
+
 function main() {
     const command = process.argv[2];
 
