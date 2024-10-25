@@ -34,6 +34,17 @@ function decodeBencode(bencodedValue){
             }
             return [output,bencodedValue.slice(1)];
         }
+        else if(bencodedValue[0] === 'd'){
+            bencodedValue = bencodedValue.slice(1);
+            const dict = {}
+            while(!bencodedValue.startsWith('e')){
+            let [key,rem1] = decode(bencodedValue);
+            let [value, rem2] = decode(rem1);
+            dict[key] = value;
+            bencodedValue = rem2;
+            }
+            return [dict, bencodedValue.slice(1)];
+          }
         else {
             throw new Error("Unsupported or invalid bencoded value");
         }
