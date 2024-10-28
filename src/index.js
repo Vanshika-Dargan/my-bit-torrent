@@ -1,6 +1,9 @@
-const process = require("process");
-const fs = require('fs');
-const sha1 = require('sha1');
+import process from 'process';
+import fs from 'fs';
+import sha1 from 'sha1';
+import axios from 'axios';
+import crypto from 'crypto';
+
 
 function encodeBencode(bencode) {
   if (Number.isFinite(bencode)) {
@@ -10,15 +13,20 @@ function encodeBencode(bencode) {
     return `${buff.length}:${buff.toString('binary')}`;
   } else if (Array.isArray(bencode)) {
     return `l${bencode.map((item) => encodeBencode(item)).join('')}e`;
-  } else {
+  } 
+  else {
     return `d${Object.entries(bencode).sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
       .map(([k, v]) => {
         if (k === 'pieces') {
           // Treat 'pieces' as binary data
           const piecesBuff = Buffer.from(v, 'binary');
-          return `${k.length}:${k}${piecesBuff.length}:${piecesBuff.toString('binary')}`;
+          const pieces=convertUint8ArrayPiecesToHex(v);
+          return `${encodeBencode(k)}${pieces.length*20}:${encodeBencode(pieces)}`;
         }
-        return `${encodeBencode(k)}${encodeBencode(v)}`;
+        else{
+          const stringValue = checkAndConvertIsUint8Array(v);
+        return `${encodeBencode(k)}${encodeBencode(stringValue)}`;
+        }
       }).join('')}e`;
   }
 }
@@ -59,11 +67,17 @@ function decodeBencode(bencodedValue) {
           const colonIndex = bencodedValue.indexOf(":");
           const length = parseInt(bencodedValue.slice(0, colonIndex), 10);
           const piecesData = bencodedValue.slice(colonIndex + 1, colonIndex + 1 + length);
-          dict[key] = Buffer.from(piecesData, 'binary'); // Store as binary buffer
+          dict[key] =   new Uint8Array([...piecesData].map(char => char.charCodeAt(0)));
           bencodedValue = bencodedValue.slice(colonIndex + 1 + length);
         } else {
           let [value, rem2] = decode(rem1);
+       
+          if(isString(value)){
+            dict[key] =   new Uint8Array([...value].map(char => char.charCodeAt(0)));
+          }
+          else{
           dict[key] = value;
+          }
           bencodedValue = rem2;
         }
       }
@@ -78,7 +92,11 @@ function calculateSHA1(buffer) {
   return sha1(buffer);
 }
 
-function main() {
+function isString(value){
+    return typeof value === 'string';
+}
+
+async function main() {
   const command = process.argv[2];
 
   if (command === "decode") {
@@ -91,16 +109,70 @@ function main() {
     const bencodedValueAsString = buff.toString('binary');
     const decodedValue = decodeBencode(bencodedValueAsString);
     const bencodedInfo = encodeBencode(decodedValue.info);
-    const newBuff = Buffer.from(bencodedInfo, 'binary');
-    const hash = calculateSHA1(newBuff);
+    const hash = calculateSHA1(bencodedInfo);
 
-    console.log('Tracker URL:', decodedValue.announce);
+    console.log('Tracker URL:', convertUint8ArrayToString(decodedValue.announce));
     console.log('Length:', decodedValue.info.length);
     console.log('Info Hash:', hash);
     console.log('Piece Length:', decodedValue.info['piece length']);
-    console.log('Piece Hashes:', splitBufferToHexArray(decodedValue.info.pieces, decodedValue.info['piece length']));
+    console.log('Piece Hashes:', convertUint8ArrayPiecesToHex(decodedValue.info.pieces));
     
+  }
+  else if(command === 'peers'){
+    const torrentFilePath = process.argv[3];
+    const buff = fs.readFileSync(torrentFilePath);
+
+
+
+
+    const bencodedValueAsString = buff.toString('binary');
+    const decodedValue = decodeBencode(bencodedValueAsString);
+    const bencodedInfo = encodeBencode(decodedValue.info);
+
+
+
+    const trackerUrl = convertUint8ArrayToString(decodedValue.announce);
+    const infoHash = calculateInfoHash(bencodedInfo);
+
+
+    const peerId = '01234567890123456789';
+    const port = 6881;
+    const uploaded = 0;
+    const downloaded = 0;
+    const left = decodedValue.info.length;
+    const compact = 1;
+
+    const queryParams = new URLSearchParams({
+      info_hash: encodeURIComponent(infoHash),
+      peer_id: peerId,
+      port: port,
+      uploaded: uploaded,
+      downloaded: downloaded,
+      left: left,
+      compact: compact
+  });
+
+const url = `${trackerUrl}?${queryParams}`;
+  const res = await fetch(url).then((x) => (x.ok ? x.arrayBuffer() : Promise.reject(x)));
+  const bytes = new Uint8Array(res);
+  let resData = decodeBencode(bytes, { bytes: true });
+  resData=convertUint8ArrayToString(resData)
+  if (!resData.peers) {
+    console.log("res err ::", );
+    console.log("url ::", url);
   } else {
+    const peers = [];
+    const bs = resData.peers;
+    for (let i = 0; i < bs.length; i += 6) {
+      const portNumber = (bs[i + 4] << 8) + bs[i + 5];
+      peers.push(`${bs[i]}.${bs[i + 1]}.${bs[i + 2]}.${bs[i + 3]}:${portNumber}`);
+    }
+    console.log(peers.join("\n"));
+  }
+
+  
+  }
+  else {
     throw new Error(`Unknown command ${command}`);
   }
 }
@@ -116,3 +188,43 @@ function splitBufferToHexArray(buffer, pieceLength) {
   return piecesArray;
 }
 
+
+
+function convertUint8ArrayToString(uint8Array){
+  return Buffer.from(uint8Array).toString('utf-8');
+}
+
+function convertUint8ArrayPiecesToHex(uint8Array){
+   const pieces=[];
+   const hashLength = 20;
+   for(let i=0;i<uint8Array.length;i+=hashLength){
+    const piece = uint8Array.slice(i,i+hashLength);
+    const pieceHex = convertUint8ArrayToHexString(piece);
+    pieces.push(pieceHex);
+   }
+   return pieces;
+}
+
+
+function convertUint8ArrayToHexString(uint8Array){
+  return Array.from(uint8Array).map(byte=>byte.toString(16).padStart(2,'0')).join('');
+}
+
+
+function checkAndConvertIsUint8Array(bencode){
+  if (bencode instanceof Uint8Array) {
+    const stringValue =  convertUint8ArrayToString(bencode);
+    return stringValue;
+  }
+  else {
+    return bencode;
+  }
+}
+
+function calculateInfoHash(bencodedInfo) {
+  const hash = crypto.createHash('sha1');
+  hash.update(bencodedInfo);
+  const infoHash = hash.digest('hex'); 
+
+  return infoHash;
+}
